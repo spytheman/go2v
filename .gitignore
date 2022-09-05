@@ -7,7 +7,6 @@ vls.log
 path_test_area/
 temp/
 tests/**/out.vv
-test.go
 z
 
 #MacOS

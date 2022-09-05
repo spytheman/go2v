@@ -230,6 +230,7 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 		type_ctx: !is_decl
 	}
 
+	/*
 	raw_fn_name := if is_decl {
 		v.get_name(tree, .snake_case, .fn_decl)
 	} else {
@@ -286,6 +287,8 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 	if is_decl {
 		v.current_method_var_name = ''
 	}
+	*/
+	println(tree.child['Body']) // removing this works
 
 	return func
 }
