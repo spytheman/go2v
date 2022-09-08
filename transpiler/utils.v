@@ -228,7 +228,7 @@ fn last_index(arr []string, val string) int {
 
 // get the type of a struct field, a function argument... from a `Tree`
 fn (mut v VAST) get_type(tree Tree) string {
-	mut temp := tree.child['Type'].tree
+	mut temp := tree.child['Type'] or { Child{} }.tree
 	mut pre_type := ''
 	mut raw_type := []string{}
 	mut next_is_end := 'X' !in temp.child && 'Elt' !in temp.child

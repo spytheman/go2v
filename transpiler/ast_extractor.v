@@ -16,7 +16,8 @@ fn ast_extractor(tree Tree) VAST {
 	v_ast.extract_module(tree)
 
 	// go through each declaration node & extract the corresponding declaration
-	for _, decl in tree.child['Decls'].tree.child {
+	xxx := tree.child['Decls'] or { Child{} }.tree.child.clone()
+	for _, decl in xxx {
 		v_ast.extract_declaration(decl.tree, false)
 	}
 
@@ -26,15 +27,17 @@ fn ast_extractor(tree Tree) VAST {
 // extract a declaration from a `Tree`
 fn (mut v VAST) extract_declaration(tree Tree, embedded bool) {
 	base, fn_base, type_of_gen_decl_field_name := if !embedded {
-		tree.child['Specs'].tree, tree, 'Tok'
+		xxx := tree.child['Specs'] or { Child{} }.tree
+		xxx, tree, 'Tok'
 	} else {
-		tree, tree.child['Decl'].tree, 'Kind'
+		yyy := tree.child['Decl'] or { Child{} }.tree
+		tree, yyy, 'Kind'
 	}
 
 	if fn_base.name == '*ast.FuncDecl' {
 		v.functions << v.extract_function(fn_base, true)
 	} else {
-		gen_decl_type := tree.child[type_of_gen_decl_field_name].val
+		gen_decl_type := tree.child[type_of_gen_decl_field_name] or { Child{} }.val
 		// enums are a special case
 		mut enum_stmt := NameFields{}
 
@@ -44,7 +47,7 @@ fn (mut v VAST) extract_declaration(tree Tree, embedded bool) {
 					v.extract_import(decl.tree)
 				}
 				'type' {
-					ast_type := decl.tree.child['Type'].tree.name
+					ast_type := decl.tree.child['Type'] or { Child{} }.tree.name
 					match ast_type {
 						'*ast.StructType' {
 							v.extract_struct(decl.tree, false)
@@ -75,7 +78,7 @@ fn (mut v VAST) extract_declaration(tree Tree, embedded bool) {
 // check if the `Tree` contains an embedded declaration and extract it if so
 fn (mut v VAST) extract_embedded_declaration(tree Tree) {
 	if 'Obj' in tree.child {
-		v.extract_declaration(tree.child['Obj'].tree, true)
+		v.extract_declaration(tree.child['Obj'] or { Child{} }.tree, true)
 	}
 }
 
@@ -86,8 +89,8 @@ fn (mut v VAST) extract_module(tree Tree) {
 
 // extract the imports from a `Tree`
 fn (mut v VAST) extract_import(tree Tree) {
-	mut imp_name := v.get_name(tree.child['Path'].tree, .snake_case, .other)#[1..-1].split('/').map(escape(it)).join('.')
-	alias := v.get_name(tree.child['Name'].tree, .snake_case, .other)
+	mut imp_name := v.get_name(tree.child['Path'] or { Child{} }.tree, .snake_case, .other)#[1..-1].split('/').map(escape(it)).join('.')
+	alias := v.get_name(tree.child['Name'] or { Child{} }.tree, .snake_case, .other)
 
 	// `golang.org/x/net/html/atom` -> `net.html.atom`
 	if imp_name.starts_with('golang.org.x.') {
@@ -177,12 +180,14 @@ fn (mut v VAST) extract_struct(tree Tree, inline bool) string {
 		mut @struct := Struct{
 			name: name
 		}
-		temp := if !inline { tree.child['Type'].tree } else { tree }
+		temp := if !inline { tree.child['Type'] or { Child{} }.tree } else { tree }
 
-		for _, field in temp.child['Fields'].tree.child['List'].tree.child {
+		xxx := temp.child['Fields'] or { Child{} }.tree.child['List'] or {Child{}}.tree.child.clone()
+		for _, field in xxx {
 			if 'Names' in field.tree.child {
 				// support `A, B int` syntax
-				for _, field_name in field.tree.child['Names'].tree.child {
+				yyy := field.tree.child['Names'] or { Child{} }.tree.child.clone()
+				for _, field_name in yyy {
 					@struct.fields[v.get_name(field_name.tree, .snake_case, .field)] = BasicValueStmt{v.get_type(field.tree)}
 				}
 			} else {
@@ -244,12 +249,12 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 	// comments on top functions (docstrings)
 	if 'Doc' in tree.child {
 		func.comment = '//' +
-			tree.child['Doc'].tree.child['List'].tree.child['0'].tree.child['Text'].val#[3..-5].replace('\\n', '\n// ').replace('\\t', '\t')
+			tree.child['Doc'] or { Child{} }.tree.child['List'] or { Child{} }.tree.child['0'] or { Child{} }.tree.child['Text'].val#[3..-5].replace('\\n', '\n// ').replace('\\t', '\t')
 	}
 
 	// arguments
-	for _, arg in tree.child['Type'].tree.child['Params'].tree.child['List'].tree.child {
-		func.args[v.get_name(arg.tree.child['Names'].tree.child['0'].tree, .ignore, .var_decl)] = v.get_type(arg.tree)
+	for _, arg in tree.child['Type'] or { Child{} }.tree.child['Params'] or { Child{} }.tree.child['List'] or { Child{}}.tree.child {
+		func.args[v.get_name(arg.tree.child['Names'] or { Child{}}.tree.child['0'] or {Child{}}.tree, .ignore, .var_decl)] = v.get_type(arg.tree)
 	}
 	for _, @type in func.args {
 		if @type in ['T', '...T'] {
@@ -260,8 +265,8 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 
 	// method
 	if 'Recv' in tree.child {
-		base := tree.child['Recv'].tree.child['List'].tree.child['0'].tree
-		method_name := v.get_name(base.child['Names'].tree.child['0'].tree, .ignore, .other)
+		base := tree.child['Recv'] or { Child{}}.tree.child['List'] or { Child{}}.tree.child['0'] or { Child{}}.tree
+		method_name := v.get_name(base.child['Names'] or { Child{}}.tree.child['0'] or {Child{}}.tree, .ignore, .other)
 		method_type := v.get_type(base)
 		v.current_method_var_name = method_name
 
@@ -272,7 +277,7 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 	}
 
 	// return value(s)
-	for _, arg in tree.child['Type'].tree.child['Results'].tree.child['List'].tree.child {
+	for _, arg in tree.child['Type'] or { Child{}}.tree.child['Results'] or { Child{}}.tree.child['List'] or { Child{}}.tree.child {
 		func.ret_vals << v.get_type(arg.tree)
 
 		// handle named return values
@@ -282,13 +287,15 @@ fn (mut v VAST) extract_function(tree Tree, is_decl bool) FunctionStmt {
 	}
 
 	// body
-	func.body << v.extract_body(tree.child['Body'].tree)
+	func.body << v.extract_body(tree.child['Body'] or { Child{}}.tree)
 
 	if is_decl {
 		v.current_method_var_name = ''
 	}
 	*/
-	println(tree.child['Body']) // removing this works
+	dump(tree)
+	x := tree.child['Body'] or {Child{}}
+	println(x) // removing this works
 
 	return func
 }
@@ -300,7 +307,8 @@ fn (mut v VAST) extract_body(tree Tree) []Statement {
 	limit := v.declared_vars_old.len
 
 	// go through every statement
-	for _, stmt in tree.child['List'].tree.child {
+	xxx := tree.child['List'] or { Child{}}. tree.child.clone()
+	for _, stmt in xxx {
 		body << v.extract_stmt(stmt.tree)
 	}
 
@@ -318,7 +326,7 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 	match tree.name {
 		// `var` syntax
 		'*ast.DeclStmt' {
-			mut var_stmt := v.extract_variable(tree.child['Decl'].tree.child['Specs'].tree.child['0'].tree,
+			mut var_stmt := v.extract_variable(tree.child['Decl'] or { Child{}}.tree.child['Specs'] or { Child{}}.tree.child['0'] or {Child{}}.tree,
 				false, true)
 
 			ret = var_stmt
@@ -338,35 +346,35 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 		}
 		'*ast.MapType' {
 			ret = MapStmt{
-				key_type: v.get_name(tree.child['Key'].tree, .ignore, .other)
-				value_type: v.get_name(tree.child['Value'].tree, .ignore, .other)
+				key_type: v.get_name(tree.child['Key']or {Child{}}.tree, .ignore, .other)
+				value_type: v.get_name(tree.child['Value']or {Child{}}.tree, .ignore, .other)
 			}
 		}
 		'*ast.ArrayType' {
 			ret = ArrayStmt{
-				@type: v.get_name(tree.child['Elt'].tree, .ignore, .other)
+				@type: v.get_name(tree.child['Elt']or {Child{}}.tree, .ignore, .other)
 			}
 		}
 		'*ast.UnaryExpr' {
-			op := if tree.child['Op'].val !in ['range', '+'] { tree.child['Op'].val } else { '' }
+			op := if tree.child['Op']or {Child{}}.val !in ['range', '+'] { tree.child['Op']or {Child{}}.val } else { '' }
 
 			ret = MultipleStmt{[
 				bv_stmt('$op'),
-				v.extract_stmt(tree.child['X'].tree),
+				v.extract_stmt(tree.child['X']or {Child{}}.tree),
 			]}
 		}
 		'*ast.BinaryExpr' {
-			op := if tree.child['Op'].val != '&^' { tree.child['Op'].val } else { '&~' }
+			op := if tree.child['Op']or {Child{}}.val != '&^' { tree.child['Op']or {Child{}}.val } else { '&~' }
 
 			ret = MultipleStmt{[
-				v.extract_stmt(tree.child['X'].tree),
+				v.extract_stmt(tree.child['X']or {Child{}}.tree),
 				bv_stmt(' $op '),
-				v.extract_stmt(tree.child['Y'].tree),
+				v.extract_stmt(tree.child['Y']or {Child{}}.tree),
 			]}
 		}
 		// arrays & `Struct{}` syntaxt
 		'*ast.CompositeLit' {
-			base := tree.child['Type'].tree
+			base := tree.child['Type']or {Child{}}.tree
 			@type := v.get_type(tree)
 
 			match base.name {
@@ -374,10 +382,10 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 				'*ast.ArrayType' {
 					mut array := ArrayStmt{
 						@type: @type[@type.index(']') or { 0 } + 1..] // remove `[..]`
-						len: v.stmt_to_string(v.extract_stmt(base.child['Len'].tree)) // TODO: format it to snake_case
+						len: v.stmt_to_string(v.extract_stmt(base.child['Len']or {Child{}}.tree)) // TODO: format it to snake_case
 					}
-
-					for _, el in tree.child['Elts'].tree.child {
+xxx := tree.child['Elts']or {Child{}}.tree.child.clone()
+					for _, el in xxx {
 						mut stmt := v.extract_stmt(el.tree)
 
 						// inline structs with specific index
@@ -432,7 +440,8 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 						}
 					}
 
-					for _, el in tree.child['Elts'].tree.child {
+zzz := tree.child['Elts']or {Child{}}.tree.child.clone()
+					for _, el in zzz {
 						@struct.fields << v.extract_stmt(el.tree)
 					}
 
@@ -454,7 +463,8 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 						value_type: v.current_implicit_map_type
 					}
 
-					for _, el in tree.child['Elts'].tree.child {
+ooo := tree.child['Elts']or {Child{}}.tree.child.clone()
+					for _, el in ooo {
 						raw := v.extract_stmt(el.tree)
 
 						if not_a_struct {
@@ -486,41 +496,42 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 		// `key: value` syntax
 		'*ast.KeyValueExpr' {
 			ret = KeyValStmt{
-				key: v.get_name(tree.child['Key'].tree, .snake_case, .other)
-				value: v.extract_stmt(tree.child['Value'].tree)
+				key: v.get_name(tree.child['Key']or {Child{}}.tree, .snake_case, .other)
+				value: v.extract_stmt(tree.child['Value']or {Child{}}.tree)
 			}
 		}
 		// slices (slicing)
 		'*ast.SliceExpr' {
 			mut slice_stmt := SliceStmt{
-				value: v.get_name(tree.child['X'].tree, .ignore, .other)
+				value: v.get_name(tree.child['X']or {Child{}}.tree, .ignore, .other)
 				low: BasicValueStmt{}
 				high: BasicValueStmt{}
 			}
 			if 'Low' in tree.child {
-				slice_stmt.low = v.extract_stmt(tree.child['Low'].tree)
+				slice_stmt.low = v.extract_stmt(tree.child['Low']or {Child{}}.tree)
 			}
 			if 'High' in tree.child {
-				slice_stmt.high = v.extract_stmt(tree.child['High'].tree)
+				slice_stmt.high = v.extract_stmt(tree.child['High']or {Child{}}.tree)
 			}
 			ret = slice_stmt
 		}
 		// (nested) function/method call
 		'*ast.ExprStmt', '*ast.CallExpr' {
-			base := if tree.name == '*ast.ExprStmt' { tree.child['X'].tree } else { tree }
+			base := if tree.name == '*ast.ExprStmt' { tree.child['X']or {Child{}}.tree } else { tree }
 
-			fn_stmt := v.extract_function(base.child['Fun'].tree, false)
+			fn_stmt := v.extract_function(base.child['Fun']or {Child{}}.tree, false)
 			if fn_stmt.body.len < 1 {
 				mut call_stmt := CallStmt{
 					namespaces: fn_stmt.name
 				}
 				// function/method arguments
-				for _, arg in base.child['Args'].tree.child {
+				xxx := base.child['Args']or {Child{}}.tree.child.clone()
+				for _, arg in xxx {
 					call_stmt.args << v.extract_stmt(arg.tree)
 				}
 
 				// ellipsis (`...a` syntax)
-				if base.child['Ellipsis'].val != '0' {
+				if base.child['Ellipsis']or {Child{}}.val != '0' {
 					idx := call_stmt.args.len - 1
 					call_stmt.args[idx] = MultipleStmt{[bv_stmt('...'), call_stmt.args[idx]]}
 				}
@@ -532,7 +543,7 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 					}
 				}
 
-				v.extract_embedded_declaration(base.child['Fun'].tree)
+				v.extract_embedded_declaration(base.child['Fun']or {Child{}}.tree)
 
 				ret = call_stmt
 			} else {
@@ -543,7 +554,7 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 		'*ast.IncDecStmt' {
 			ret = IncDecStmt{
 				var: v.get_name(tree, .ignore, .other)
-				inc: tree.child['Tok'].val
+				inc: tree.child['Tok'] or {Child{}}.val
 			}
 		}
 		// if/else
@@ -556,18 +567,18 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 				mut if_else := IfElse{}
 
 				// `if z := 0; z < 10` syntax
-				var := v.extract_variable(temp.child['Init'].tree, true, false)
+				var := v.extract_variable(temp.child['Init']or {Child{}}.tree, true, false)
 				if var.names.len > 0 {
 					if_stmt.init_vars << var
 				}
 
 				// condition
-				if_else.condition = v.extract_stmt(temp.child['Cond'].tree)
+				if_else.condition = v.extract_stmt(temp.child['Cond']or {Child{}}.tree)
 
 				// body
 				if_else.body << if 'Body' in temp.child {
 					// `if` or `else if` branchs
-					v.extract_body(temp.child['Body'].tree)
+					v.extract_body(temp.child['Body']or {Child{}}.tree)
 				} else {
 					// `else` branchs
 					v.extract_body(temp)
@@ -578,10 +589,10 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 				if next_is_end {
 					break
 				}
-				if 'Else' !in temp.child['Else'].tree.child {
+				if 'Else' !in temp.child['Else']or {Child{}}.tree.child {
 					next_is_end = true
 				}
-				temp = temp.child['Else'].tree
+				temp = temp.child['Else']or {Child{}}.tree
 			}
 
 			ret = if_stmt
@@ -591,26 +602,26 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			mut for_stmt := ForStmt{}
 
 			// init
-			for_stmt.init = v.extract_variable(tree.child['Init'].tree, true, false)
+			for_stmt.init = v.extract_variable(tree.child['Init']or {Child{}}.tree, true, false)
 			for_stmt.init.mutable = false
 
 			// condition
-			for_stmt.condition = v.extract_stmt(tree.child['Cond'].tree)
+			for_stmt.condition = v.extract_stmt(tree.child['Cond']or {Child{}}.tree)
 
 			// post
-			post_base := tree.child['Post'].tree
+			post_base := tree.child['Post']or {Child{}}.tree
 			if post_base.child.len > 0 {
 				for_stmt.post = v.extract_stmt(post_base)
 			}
 
 			// body
-			for_stmt.body = v.extract_body(tree.child['Body'].tree)
+			for_stmt.body = v.extract_body(tree.child['Body']or {Child{}}.tree)
 
 			ret = for_stmt
 		}
 		// break/continue
 		'*ast.BranchStmt' {
-			ret = BranchStmt{tree.child['Tok'].val, v.get_name(tree.child['Label'].tree,
+			ret = BranchStmt{tree.child['Tok']or {Child{}}.val, v.get_name(tree.child['Label']or {Child{}}.tree,
 				.snake_case, .other)}
 		}
 		// for in
@@ -618,12 +629,12 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			mut forin_stmt := ForInStmt{}
 
 			// classic syntax
-			if tree.child['Tok'].val != 'ILLEGAL' {
+			if tree.child['Tok']or {Child{}}.val != 'ILLEGAL' {
 				// idx
-				forin_stmt.idx = v.get_name(tree.child['Key'].tree, .snake_case, .var_decl)
+				forin_stmt.idx = v.get_name(tree.child['Key']or {Child{}}.tree, .snake_case, .var_decl)
 
 				// element & variable
-				temp_var := v.extract_variable(tree.child['Key'].tree.child['Obj'].tree.child['Decl'].tree,
+				temp_var := v.extract_variable(tree.child['Key']or {Child{}}.tree.child['Obj']or {Child{}}.tree.child['Decl']or {Child{}}.tree,
 					true, false)
 				forin_stmt.element = temp_var.names[1] or { '_' }
 				forin_stmt.variable = temp_var.values[0] or { bv_stmt('_') }
@@ -633,21 +644,22 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			}
 
 			// body
-			forin_stmt.body = v.extract_body(tree.child['Body'].tree)
+			forin_stmt.body = v.extract_body(tree.child['Body']or {Child{}}.tree)
 
 			ret = forin_stmt
 		}
 		'*ast.ReturnStmt' {
 			mut return_stmt := ReturnStmt{}
 
-			for _, el in tree.child['Results'].tree.child {
+xxx := tree.child['Results']or {Child{}}.tree.child.clone()
+			for _, el in xxx {
 				return_stmt.values << v.extract_stmt(el.tree)
 			}
 
 			ret = return_stmt
 		}
 		'*ast.DeferStmt' {
-			mut defer_stmt := DeferStmt{[v.extract_stmt(tree.child['Call'].tree)]}
+			mut defer_stmt := DeferStmt{[v.extract_stmt(tree.child['Call']or {Child{}}.tree)]}
 
 			// as Go's defer stmt only support deferring one stmt, in Go if you want to defer multiple stmts you have to use an anonymous function, here we just extract the anonymous function's body
 			if defer_stmt.body.len == 1 && defer_stmt.body[0] is FunctionStmt {
@@ -661,20 +673,25 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			mut match_stmt := MatchStmt{}
 
 			if !is_type_switch {
-				match_stmt.init = v.extract_variable(tree.child['Init'].tree, true, false)
+			zzz := tree.child['Init']or {Child{}}.tree
+				match_stmt.init = v.extract_variable(zzz, true, false)
 
-				value := v.extract_stmt(tree.child['Tag'].tree)
+xxx := tree.child['Tag']or {Child{}}.tree
+				value := v.extract_stmt(xxx)
 				match_stmt.value = if value != bv_stmt('') {
-					v.extract_stmt(tree.child['Tag'].tree)
+					yyy := tree.child['Tag']or {Child{}}.tree
+					v.extract_stmt(yyy)
 				} else {
 					bv_stmt('true')
 				}
 			} else {
-				match_stmt.init = v.extract_variable(tree.child['Assign'].tree, true,
+				ddd := tree.child['Assign']or {Child{}}.tree
+				match_stmt.init = v.extract_variable(ddd, true,
 					false)
 
 				value := if match_stmt.init.values.len == 0 {
-					v.extract_stmt(tree.child['Assign'].tree.child['X'].tree.child['X'].tree)
+					ooo := tree.child['Assign']or {Child{}}.tree.child['X']or {Child{}}.tree.child['X']or {Child{}}.tree
+					v.extract_stmt(ooo)
 				} else {
 					match_stmt.init.values[0]
 				}
@@ -684,7 +701,8 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			}
 
 			// cases
-			for _, case in tree.child['Body'].tree.child['List'].tree.child {
+			xxx := tree.child['Body']or {Child{}}.tree.child['List']or {Child{}}.tree.child.clone()
+			for _, case in xxx {
 				mut match_case := MatchCase{
 					values: v.extract_body(case.tree)
 				}
@@ -696,8 +714,8 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 						}
 					}
 				}
-
-				for _, case_stmt in case.tree.child['Body'].tree.child {
+yyy := case.tree.child['Body']or {Child{}}.tree.child.clone()
+				for _, case_stmt in yyy {
 					match_case.body << v.extract_stmt(case_stmt.tree)
 				}
 
@@ -718,13 +736,13 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 			ret = bv_stmt('...')
 		}
 		'*ast.LabeledStmt' {
-			ret = LabelStmt{v.get_name(tree.child['Label'].tree, .snake_case, .other), v.extract_stmt(tree.child['Stmt'].tree)}
+			ret = LabelStmt{v.get_name(tree.child['Label']or {Child{}}.tree, .snake_case, .other), v.extract_stmt(tree.child['Stmt']or {Child{}}.tree)}
 		}
 		'*ast.ParenExpr' {
-			ret = bv_stmt('(' + v.stmt_to_string(v.extract_stmt(tree.child['X'].tree)) + ')')
+			ret = bv_stmt('(' + v.stmt_to_string(v.extract_stmt(tree.child['X']or {Child{}}.tree)) + ')')
 		}
 		'*ast.GoStmt' {
-			to_call := v.extract_stmt(tree.child['Call'].tree)
+			to_call := v.extract_stmt(tree.child['Call']or {Child{}}.tree)
 			if to_call is FunctionStmt {
 				mut multiple_stmts := MultipleStmt{}
 				for _, child_stmt in to_call.body {
@@ -751,11 +769,11 @@ fn (mut v VAST) extract_stmt(tree Tree) Statement {
 
 // extract the variable from a `Tree`
 fn (mut v VAST) extract_variable(tree Tree, short bool, force_decl bool) VariableStmt {
-	left_hand := if short { tree.child['Lhs'].tree.child } else { tree.child['Names'].tree.child }
-	right_hand := if short { tree.child['Rhs'].tree.child } else { tree.child['Values'].tree.child }
+	left_hand := if short { tree.child['Lhs']or {Child{}}.tree.child } else { tree.child['Names']or {Child{}}.tree.child }
+	right_hand := if short { tree.child['Rhs']or {Child{}}.tree.child } else { tree.child['Values']or {Child{}}.tree.child }
 
 	mut var_stmt := VariableStmt{
-		middle: if !force_decl { tree.child['Tok'].val } else { ':=' }
+		middle: if !force_decl { tree.child['Tok']or {Child{}}.val } else { ':=' }
 		@type: v.get_type(tree)
 	}
 
